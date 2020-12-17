@@ -257,7 +257,8 @@ class WaveRNN(nn.Module):
         output = output[:wave_len]
         output[-20 * self.hop_length:] *= fade_out
 
-        save_wav(output, save_path)
+        #save_wav(output, save_path)
+        librosa.output.write_wav(save_path, output.astype(np.float32), sr=self.sample_rate)
 
         self.train()
 
