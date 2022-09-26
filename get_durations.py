@@ -146,7 +146,7 @@ def durations_to_attention_matrix(durations):
 
 def save_guided_attention(matrix, outfile):
     np.save(outfile, matrix, allow_pickle=False)
-    print('Created attention guide %s' %(outfile))§
+    print('Created attention guide %s' %(outfile))
 
 def main_work():
 

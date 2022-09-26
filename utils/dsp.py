@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import librosa
+import soundfile as sf
 from utils import hparams as hp
 from scipy.signal import lfilter
 
@@ -20,7 +21,7 @@ def load_wav(path):
 
 
 def save_wav(x, path):
-    librosa.output.write_wav(path, x.astype(np.float32), sr=hp.sample_rate)
+    sf.write(path, x.astype(np.float32), samplerate=hp.sample_rate)
 
 
 def split_signal(x):
@@ -114,4 +115,3 @@ def reconstruct_waveform(mel, n_iter=32):
         S, n_iter=n_iter,
         hop_length=hp.hop_length, win_length=hp.win_length)
     return wav
-

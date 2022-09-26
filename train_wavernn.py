@@ -74,28 +74,49 @@ def main():
 
     total_steps = 10_000_000 if force_train else hp.voc_total_steps
 
-    simple_table([('Remaining', str((total_steps - voc_model.get_step())//1000) + 'k Steps'),
-                  ('Batch Size', batch_size),
-                  ('LR', lr),
-                  ('Sequence Len', hp.voc_seq_len),
-                  ('GTA Train', train_gta)])
-
     loss_func = F.cross_entropy if voc_model.mode == 'RAW' else discretized_mix_logistic_loss
 
-    voc_train_loop(paths, voc_model, loss_func, optimizer, train_set, test_set, lr, total_steps)
+    for i, session in enumerate(hp.voc_schedule):
+        current_step = voc_model.get_step()
+
+        lr, training_steps, batch_size = session
+
+        # Do we need to change to the next session?
+        if current_step >= training_steps:
+            # Are there no further sessions than the current one?
+            if i == len(hp.tts_schedule)-1:
+                # There are no more sessions. Check if we force training.
+                if force_train:
+                    # Don't finish the loop - train forever
+                    training_steps = 999_999_999
+                else:
+                    # We have completed training. Breaking is same as continue
+                    break
+            else:
+                # There is a following session, go to it
+                continue
+
+
+        simple_table([('Remaining', str((training_steps - voc_model.get_step())//1000) + 'k Steps'),
+                      ('Batch Size', batch_size),
+                      ('LR', lr),
+                      ('Sequence Len', hp.voc_seq_len),
+                      ('GTA Train', train_gta)])
+
+        voc_train_loop(paths, voc_model, loss_func, optimizer, train_set, test_set, lr, training_steps)
 
     print('Training Complete.')
     print('To continue training increase voc_total_steps in hparams.py or use --force_train')
 
 
-def voc_train_loop(paths: Paths, model: WaveRNN, loss_func, optimizer, train_set, test_set, lr, total_steps):
+def voc_train_loop(paths: Paths, model: WaveRNN, loss_func, optimizer, train_set, test_set, lr, training_steps):
     # Use same device as model parameters
     device = next(model.parameters()).device
 
     for g in optimizer.param_groups: g['lr'] = lr
 
     total_iters = len(train_set)
-    epochs = (total_steps - model.get_step()) // total_iters + 1
+    epochs = (training_steps - model.get_step()) // total_iters + 1
 
     for e in range(1, epochs + 1):
 
@@ -106,10 +127,12 @@ def voc_train_loop(paths: Paths, model: WaveRNN, loss_func, optimizer, train_set
             x, m, y = x.to(device), m.to(device), y.to(device)
 
             # Parallelize model onto GPUS using workaround due to python bug
-            if device.type == 'cuda' and torch.cuda.device_count() > 1:
-                y_hat = data_parallel_workaround(model, x, m)
-            else:
-                y_hat = model(x, m)
+            y_hat = model(x, m)
+            if False:
+                if device.type == 'cuda' and torch.cuda.device_count() > 1:
+                    y_hat = data_parallel_workaround(model, x, m)
+                else:
+                    y_hat = model(x, m)
 
             if model.mode == 'RAW':
                 y_hat = y_hat.transpose(1, 2).unsqueeze(-1)
@@ -126,7 +149,7 @@ def voc_train_loop(paths: Paths, model: WaveRNN, loss_func, optimizer, train_set
             loss.backward()
             if hp.voc_clip_grad_norm is not None:
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), hp.voc_clip_grad_norm)
-                if np.isnan(grad_norm):
+                if np.isnan(grad_norm.cpu().numpy()):
                     print('grad_norm was NaN!')
             optimizer.step()
 

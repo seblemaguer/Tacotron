@@ -22,6 +22,8 @@ _replicas_ref = None
 def data_parallel_workaround(model, *input):
     global _output_ref
     global _replicas_ref
+
+    # Prepare replocates
     device_ids = list(range(torch.cuda.device_count()))
     output_device = device_ids[0]
     replicas = torch.nn.parallel.replicate(model, device_ids)
@@ -29,8 +31,12 @@ def data_parallel_workaround(model, *input):
     inputs = torch.nn.parallel.scatter(input, device_ids)
     # inputs.shape = (num_gpus, num_args, batch/num_gpus, ...)
     replicas = replicas[:len(inputs)]
+
+    # Run in parallel
     outputs = torch.nn.parallel.parallel_apply(replicas, inputs)
     y_hat = torch.nn.parallel.gather(outputs, output_device)
+
+    # Backup some hlpers
     _output_ref = outputs
     _replicas_ref = replicas
     return y_hat
